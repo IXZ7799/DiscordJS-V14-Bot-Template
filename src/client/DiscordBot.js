@@ -23,12 +23,6 @@ class DiscordBot extends Client {
     rest_application_commands_array = [];
     login_attempts = 0;
     login_timestamp = 0;
-    statusMessages = [
-        { name: 'Status 1', type: 4 },
-        { name: 'Status 2', type: 4 },
-        { name: 'Status 3', type: 4 }
-    ];
-
     commands_handler = new CommandsHandler(this);
     components_handler = new ComponentsHandler(this);
     events_handler = new EventsHandler(this);
@@ -46,23 +40,15 @@ class DiscordBot extends Client {
             ],
             presence: {
                 activities: [{
-                    name: 'keep this empty',
+                    name: 'Custom Status',
                     type: 4,
-                    state: 'DiscordJS-V14-Bot-Template v3'
+                    state: 'eating grass'
                 }]
             }
         });
         
         new CommandsListener(this);
         new ComponentsListener(this);
-    }
-
-    startStatusRotation = () => {
-        let index = 0;
-        setInterval(() => {
-            this.user.setPresence({ activities: [this.statusMessages[index]] });
-            index = (index + 1) % this.statusMessages.length;
-        }, 4000);
     }
 
     connect = async () => {
@@ -75,7 +61,6 @@ class DiscordBot extends Client {
             this.commands_handler.load();
             this.components_handler.load();
             this.events_handler.load();
-            this.startStatusRotation();
 
             warn('Attempting to register application commands... (this might take a while!)');
             await this.commands_handler.registerApplicationCommands(config.development);
