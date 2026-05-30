@@ -42,11 +42,11 @@ class DiscordBot extends Client {
                 activities: [{
                     name: 'Custom Status',
                     type: 4,
-                    state: 'eating grass'
+                    state: 'eating grass & watching zobs'
                 }]
             }
         });
-        
+
         new CommandsListener(this);
         new ComponentsListener(this);
     }
