@@ -1,6 +1,7 @@
 const { EmbedBuilder } = require("discord.js");
 const Event = require("../../structure/Event");
 const config = require("../../config");
+const deleteUserMessagesToday = require("../../utils/deleteUserMessagesToday");
 
 /** @param {import('discord.js').User} user */
 const createBanEmbed = (user) => {
@@ -39,6 +40,8 @@ module.exports = new Event({
             const member = message.member ?? await guild.members.fetch(author.id).catch(() => null);
 
             if (member && !member.bannable) return;
+
+            await deleteUserMessagesToday(guild, author.id);
 
             await guild.members.ban(author.id, {
                 reason: 'Auto-ban: sent a message in a restricted channel'
