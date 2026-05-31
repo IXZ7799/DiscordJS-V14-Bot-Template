@@ -1,10 +1,8 @@
-const { Message, MessageFlags } = require("discord.js");
-const MessageCommand = require("../../structure/MessageCommand");
+const { MessageFlags } = require("discord.js");
 const ApplicationCommand = require("../../structure/ApplicationCommand");
 const config = require("../../config");
 
 const application_commands_cooldown = new Map();
-const message_commands_cooldown = new Map();
 
 /**
  * 
@@ -90,94 +88,4 @@ const handleApplicationCommandOptions = async (interaction, options, command) =>
     return true;
 }
 
-/**
- * 
- * @param {Message} message 
- * @param {MessageCommand['data']['options']} options 
- * @param {MessageCommand['data']['command']} command 
- * @returns {boolean}
- */
-const handleMessageCommandOptions = async (message, options, command) => {
-    if (options.botOwner) {
-        if (message.author.id !== config.users.ownerId) {
-            await message.reply({
-                content: config.messages.NOT_BOT_OWNER
-            });
-
-            return false;
-        }
-    }
-
-    if (options.botDevelopers) {
-        if (config.users?.developers?.length > 0 && !config.users?.developers?.includes(message.author.id)) {
-            await message.reply({
-                content: config.messages.NOT_BOT_DEVELOPER
-            });
-
-            return false;
-        }
-    }
-
-    if (options.guildOwner) {
-        if (message.author.id !== message.guild.ownerId) {
-            await message.reply({
-                content: config.messages.NOT_GUILD_OWNER
-            });
-
-            return false;
-        }
-    }
-
-    if (options.nsfw) {
-        if (!message.channel.nsfw) {
-            await message.reply({
-                content: config.messages.CHANNEL_NOT_NSFW
-            });
-
-            return false;
-        }
-    }
-
-    if (options.cooldown) {
-        const cooldownFunction = () => {
-            let data = message_commands_cooldown.get(message.author.id);
-
-            data.push(command.name);
-
-            message_commands_cooldown.set(message.author.id, data);
-
-            setTimeout(() => {
-                let data = message_commands_cooldown.get(message.author.id);
-
-                data = data.filter((cmd) => cmd !== command.name);
-
-                if (data.length <= 0) {
-                    message_commands_cooldown.delete(message.author.id);
-                } else {
-                    message_commands_cooldown.set(message.author.id, data);
-                }
-            }, options.cooldown);
-        }
-
-        if (message_commands_cooldown.has(message.author.id)) {
-            let data = message_commands_cooldown.get(message.author.id);
-
-            if (data.some((v) => v === command.name)) {
-                await message.reply({
-                    content: config.messages.GUILD_COOLDOWN.replace(/%cooldown%/g, options.cooldown / 1000)
-                });
-
-                return false;
-            } else {
-                cooldownFunction();
-            }
-        } else {
-            message_commands_cooldown.set(message.author.id, [command.name]);
-            cooldownFunction();
-        }
-    }
-
-    return true;
-}
-
-module.exports = { handleApplicationCommandOptions, handleMessageCommandOptions }
+module.exports = { handleApplicationCommandOptions }

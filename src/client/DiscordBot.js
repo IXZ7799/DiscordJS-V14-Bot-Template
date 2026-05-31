@@ -1,32 +1,19 @@
 const { Client, Collection, Partials } = require("discord.js");
 const CommandsHandler = require("./handler/CommandsHandler");
-const { warn, error, info, success } = require("../utils/Console");
+const { warn, error, success } = require("../utils/Console");
 const config = require("../config");
 const CommandsListener = require("./handler/CommandsListener");
-const ComponentsHandler = require("./handler/ComponentsHandler");
-const ComponentsListener = require("./handler/ComponentsListener");
 const EventsHandler = require("./handler/EventsHandler");
-const { QuickYAML } = require('quick-yaml.db');
 
 class DiscordBot extends Client {
     collection = {
-        application_commands: new Collection(),
-        message_commands: new Collection(),
-        message_commands_aliases: new Collection(),
-        components: {
-            buttons: new Collection(),
-            selects: new Collection(),
-            modals: new Collection(),
-            autocomplete: new Collection()
-        }
+        application_commands: new Collection()
     }
     rest_application_commands_array = [];
     login_attempts = 0;
     login_timestamp = 0;
     commands_handler = new CommandsHandler(this);
-    components_handler = new ComponentsHandler(this);
     events_handler = new EventsHandler(this);
-    database = new QuickYAML(config.database.path);
 
     constructor() {
         super({
@@ -48,7 +35,6 @@ class DiscordBot extends Client {
         });
 
         new CommandsListener(this);
-        new ComponentsListener(this);
     }
 
     connect = async () => {
@@ -59,7 +45,6 @@ class DiscordBot extends Client {
         try {
             await this.login(process.env.CLIENT_TOKEN);
             this.commands_handler.load();
-            this.components_handler.load();
             this.events_handler.load();
 
             warn('Attempting to register application commands... (this might take a while!)');
