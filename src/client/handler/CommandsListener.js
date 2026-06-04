@@ -4,6 +4,7 @@ const config = require("../../config");
 const { handleApplicationCommandOptions } = require("./CommandOptions");
 const ApplicationCommand = require("../../structure/ApplicationCommand");
 const { error } = require("../../utils/Console");
+const { isDeveloper } = require("../../utils/isDeveloper");
 
 class CommandsListener {
     /**
@@ -24,6 +25,14 @@ class CommandsListener {
             const command = client.collection.application_commands.get(interaction.commandName);
 
             if (!command) return;
+
+            if (!isDeveloper(interaction.user.id)) {
+                await interaction.reply({
+                    content: config.messages.NOT_BOT_DEVELOPER,
+                    flags: MessageFlags.Ephemeral
+                });
+                return;
+            }
 
             try {
                 if (command.options) {

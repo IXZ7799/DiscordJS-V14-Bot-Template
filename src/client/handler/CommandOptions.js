@@ -24,7 +24,9 @@ const handleApplicationCommandOptions = async (interaction, options, command) =>
     }
 
     if (options.botDevelopers) {
-        if (config.users?.developers?.length > 0 && !config.users?.developers?.includes(interaction.user.id)) {
+        if (interaction.user.id !== config.users.ownerId
+            && config.users?.developers?.length > 0
+            && !config.users?.developers?.includes(interaction.user.id)) {
             await interaction.reply({
                 content: config.messages.NOT_BOT_DEVELOPER,
                 flags: MessageFlags.Ephemeral

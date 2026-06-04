@@ -37,7 +37,10 @@ class CommandsHandler {
                     }
 
                     this.client.collection.application_commands.set(module.command.name, module);
-                    this.client.rest_application_commands_array.push(module.command);
+                    this.client.rest_application_commands_array.push({
+                        ...module.command,
+                        default_member_permissions: '0'
+                    });
 
                     info('Loaded new application command: ' + file);
                 } catch {

@@ -1,4 +1,4 @@
-const { ChatInputCommandInteraction } = require("discord.js");
+const { ChatInputCommandInteraction, MessageFlags } = require("discord.js");
 const DiscordBot = require("../../client/DiscordBot");
 const ApplicationCommand = require("../../structure/ApplicationCommand");
 
@@ -10,6 +10,7 @@ module.exports = new ApplicationCommand({
         options: []
     },
     options: {
+        botDevelopers: true,
         cooldown: 5000
     },
     /**
@@ -19,7 +20,8 @@ module.exports = new ApplicationCommand({
      */
     run: async (client, interaction) => {
         await interaction.reply({
-            content: '**Pong!** ' + client.ws.ping + 'ms'
+            content: '**Pong!** ' + client.ws.ping + 'ms',
+            flags: MessageFlags.Ephemeral
         });
     }
 }).toJSON();
