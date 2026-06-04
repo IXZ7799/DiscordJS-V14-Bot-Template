@@ -4,6 +4,8 @@ const config = require('../config');
 
 const filePath = path.resolve(config.highlights?.path ?? './highlights.json');
 
+const normalizeWord = (word) => word.trim().toLowerCase();
+
 const readStore = () => {
     try {
         if (!fs.existsSync(filePath)) return {};
@@ -19,6 +21,15 @@ const writeStore = (data) => {
 };
 
 /**
+ * Case-insensitive check whether message content contains a highlight word.
+ * @param {string} content
+ * @param {string} word stored lowercase
+ */
+const contentIncludesWord = (content, word) => {
+    return content.toLowerCase().includes(word);
+};
+
+/**
  * @param {string} userId
  */
 const getWords = (userId) => {
@@ -31,7 +42,7 @@ const getWords = (userId) => {
  * @param {string} word
  */
 const addWord = (userId, word) => {
-    const normalized = word.trim().toLowerCase();
+    const normalized = normalizeWord(word);
     const store = readStore();
     const words = getWords(userId);
 
@@ -56,7 +67,7 @@ const addWord = (userId, word) => {
  * @param {string} word
  */
 const removeWord = (userId, word) => {
-    const normalized = word.trim().toLowerCase();
+    const normalized = normalizeWord(word);
     const store = readStore();
     const words = getWords(userId);
 
@@ -79,10 +90,17 @@ const getAllHighlightSubscriptions = () => {
 
     for (const [userId, words] of Object.entries(store)) {
         if (!Array.isArray(words) || !words.length) continue;
-        map.set(userId, words);
+        map.set(userId, words.map(normalizeWord));
     }
 
     return map;
 };
 
-module.exports = { getWords, addWord, removeWord, getAllHighlightSubscriptions };
+module.exports = {
+    getWords,
+    addWord,
+    removeWord,
+    getAllHighlightSubscriptions,
+    contentIncludesWord,
+    normalizeWord
+};

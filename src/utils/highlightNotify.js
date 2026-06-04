@@ -8,7 +8,7 @@ const HIGHLIGHT_COLOR = 0xFFD966;
  */
 const buildHighlightDescription = (word, content) => {
     const lower = content.toLowerCase();
-    const index = lower.indexOf(word.toLowerCase());
+    const index = lower.indexOf(word);
 
     if (index === -1) return `__**${word}**__`;
 
