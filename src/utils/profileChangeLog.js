@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const config = require('../config');
+const { info, warn, error } = require('./Console');
 
 const PROFILE_COLOR = 0x5865F2;
 const recentLogs = new Map();
@@ -34,7 +35,10 @@ const wasRecentlyLogged = (userId, type) => {
     const key = `${userId}:${type}`;
     const expires = recentLogs.get(key);
 
-    if (expires && expires > Date.now()) return true;
+    if (expires && expires > Date.now()) {
+        info(`[ProfileWatch] Skipped duplicate ${type} log for ${userId}`);
+        return true;
+    }
 
     recentLogs.set(key, Date.now() + 5000);
     return false;
@@ -45,11 +49,23 @@ const wasRecentlyLogged = (userId, type) => {
  */
 const getProfileLogTarget = async (client) => {
     const logChannelId = config.profileWatch?.logChannelId;
-    if (!logChannelId) return null;
 
-    const channel = await client.channels.fetch(logChannelId).catch(() => null);
-    if (!channel?.isTextBased() || !channel.guild) return null;
+    if (!logChannelId) {
+        warn('[ProfileWatch] No logChannelId in config.profileWatch');
+        return null;
+    }
 
+    const channel = await client.channels.fetch(logChannelId).catch((err) => {
+        error('[ProfileWatch] Failed to fetch log channel:', err.message);
+        return null;
+    });
+
+    if (!channel?.isTextBased() || !channel.guild) {
+        warn('[ProfileWatch] Log channel missing, not text-based, or has no guild:', logChannelId);
+        return null;
+    }
+
+    info(`[ProfileWatch] Log target ready: #${channel.name} in ${channel.guild.name}`);
     return { guild: channel.guild, channel };
 };
 
@@ -58,10 +74,23 @@ const getProfileLogTarget = async (client) => {
  * @param {string} userId
  */
 const isMemberInGuild = async (guild, userId) => {
-    if (guild.members.cache.has(userId)) return true;
+    if (guild.members.cache.has(userId)) {
+        info(`[ProfileWatch] User ${userId} found in ${guild.name} member cache`);
+        return true;
+    }
 
-    const member = await guild.members.fetch({ user: userId, force: false }).catch(() => null);
-    return Boolean(member);
+    const member = await guild.members.fetch({ user: userId, force: false }).catch((err) => {
+        warn(`[ProfileWatch] Member fetch failed for ${userId} in ${guild.name}:`, err.message);
+        return null;
+    });
+
+    if (member) {
+        info(`[ProfileWatch] User ${userId} fetched in ${guild.name}`);
+        return true;
+    }
+
+    warn(`[ProfileWatch] User ${userId} is not a member of ${guild.name}`);
+    return false;
 };
 
 /**
@@ -91,7 +120,12 @@ const sendProfileChangeLog = async (target, user, change) => {
         embed.setThumbnail(change.thumbnailUrl);
     }
 
-    await target.channel.send({ embeds: [embed] });
+    try {
+        await target.channel.send({ embeds: [embed] });
+        info(`[ProfileWatch] Sent "${change.title}" for ${user.tag} (${user.id})`);
+    } catch (err) {
+        error(`[ProfileWatch] Failed to send "${change.title}" for ${user.id}:`, err.message);
+    }
 };
 
 /**
