@@ -4,14 +4,6 @@ const config = require('../config');
 const PROFILE_COLOR = 0x5865F2;
 
 /**
- * @param {string | null | undefined} value
- */
-const formatText = (value) => {
-    if (!value?.length) return '*None*';
-    return value.length > 1024 ? `${value.slice(0, 1021)}...` : value;
-};
-
-/**
  * @param {import('discord.js').User} user
  * @param {string | null} hash
  */
@@ -34,32 +26,34 @@ const guildAvatarUrl = (member, hash) => {
 };
 
 /**
- * @param {import('discord.js').Client} client
  * @param {import('discord.js').Guild} guild
  * @param {import('discord.js').User} user
- * @param {{ name: string, value: string }[]} fields
- * @param {string | null} [thumbnailUrl]
+ * @param {{ title: string, thumbnailUrl?: string | null, detail?: string | null }} change
  */
-const sendProfileChangeLog = async (client, guild, user, fields, thumbnailUrl = null) => {
+const sendProfileChangeLog = async (guild, user, change) => {
     const logChannelId = config.profileWatch?.logChannelId;
-    if (!logChannelId || !fields.length) return;
+    if (!logChannelId) return;
 
     const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
     if (!logChannel?.isTextBased()) return;
 
+    const description = change.detail
+        ? `<@${user.id}>\n${change.detail}`
+        : `<@${user.id}>`;
+
     const embed = new EmbedBuilder()
         .setAuthor({
-            name: 'Profile Updated',
+            name: user.username,
             iconURL: user.displayAvatarURL({ size: 1024 })
         })
-        .setDescription(`<@${user.id}> ${user.username}`)
+        .setTitle(change.title)
+        .setDescription(description)
         .setColor(PROFILE_COLOR)
-        .addFields(fields)
         .setFooter({ text: `ID: ${user.id}` })
         .setTimestamp();
 
-    if (thumbnailUrl) {
-        embed.setThumbnail(thumbnailUrl);
+    if (change.thumbnailUrl) {
+        embed.setThumbnail(change.thumbnailUrl);
     }
 
     await logChannel.send({ embeds: [embed] });
@@ -80,10 +74,18 @@ const getLogGuild = async (client, guildId) => {
     return logChannel.guild;
 };
 
+/**
+ * @param {string | null | undefined} value
+ */
+const formatNewValue = (value) => {
+    if (!value?.length) return '*None*';
+    return `**${value.length > 256 ? `${value.slice(0, 253)}...` : value}**`;
+};
+
 module.exports = {
     sendProfileChangeLog,
     getLogGuild,
-    formatText,
+    formatNewValue,
     avatarUrl,
     guildAvatarUrl
 };

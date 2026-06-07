@@ -3,7 +3,7 @@ const config = require("../../config");
 const {
     sendProfileChangeLog,
     getLogGuild,
-    formatText,
+    formatNewValue,
     guildAvatarUrl
 } = require("../../utils/profileChangeLog");
 
@@ -26,33 +26,28 @@ module.exports = new Event({
         const logGuild = await getLogGuild(client, newMember.guild.id);
         if (!logGuild) return;
 
-        const fields = [];
+        const changes = [];
 
         if (oldMember.nickname !== newMember.nickname) {
-            fields.push({
-                name: 'Server Nickname',
-                value: `${formatText(oldMember.nickname)} → ${formatText(newMember.nickname)}`
+            changes.push({
+                title: 'Server nickname update',
+                detail: formatNewValue(newMember.nickname)
             });
         }
 
         if (oldMember.avatar !== newMember.avatar) {
-            const before = guildAvatarUrl(oldMember, oldMember.avatar)
-                ?? oldMember.user.displayAvatarURL({ size: 4096 });
-            const after = guildAvatarUrl(newMember, newMember.avatar)
-                ?? newMember.user.displayAvatarURL({ size: 4096 });
-
-            fields.push({
-                name: 'Server Profile Picture',
-                value: `[Before](${before}) → [After](${after})`
+            changes.push({
+                title: 'Server profile picture update',
+                thumbnailUrl: newMember.avatar
+                    ? guildAvatarUrl(newMember, newMember.avatar)
+                    : newMember.displayAvatarURL({ size: 4096 })
             });
         }
 
-        if (!fields.length) return;
+        if (!changes.length) return;
 
-        const thumbnailUrl = oldMember.avatar !== newMember.avatar
-            ? (guildAvatarUrl(newMember, newMember.avatar) ?? newMember.displayAvatarURL({ size: 4096 }))
-            : null;
-
-        await sendProfileChangeLog(client, logGuild, newMember.user, fields, thumbnailUrl);
+        for (const change of changes) {
+            await sendProfileChangeLog(logGuild, newMember.user, change);
+        }
     }
 }).toJSON();

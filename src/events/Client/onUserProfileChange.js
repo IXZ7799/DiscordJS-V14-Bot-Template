@@ -3,7 +3,7 @@ const config = require("../../config");
 const {
     sendProfileChangeLog,
     getLogGuild,
-    formatText,
+    formatNewValue,
     avatarUrl
 } = require("../../utils/profileChangeLog");
 
@@ -14,33 +14,30 @@ module.exports = new Event({
         if (!config.profileWatch?.logChannelId) return;
         if (newUser.bot) return;
 
-        const fields = [];
+        const changes = [];
 
         if (oldUser.username !== newUser.username) {
-            fields.push({
-                name: 'Username',
-                value: `${formatText(oldUser.username)} → ${formatText(newUser.username)}`
+            changes.push({
+                title: 'Username update',
+                detail: formatNewValue(newUser.username)
             });
         }
 
         if (oldUser.globalName !== newUser.globalName) {
-            fields.push({
-                name: 'Display Name',
-                value: `${formatText(oldUser.globalName)} → ${formatText(newUser.globalName)}`
+            changes.push({
+                title: 'Display name update',
+                detail: formatNewValue(newUser.globalName)
             });
         }
 
         if (oldUser.avatar !== newUser.avatar) {
-            const before = avatarUrl(oldUser, oldUser.avatar);
-            const after = avatarUrl(newUser, newUser.avatar);
-
-            fields.push({
-                name: 'Profile Picture',
-                value: `[Before](${before}) → [After](${after})`
+            changes.push({
+                title: 'Avatar update',
+                thumbnailUrl: avatarUrl(newUser, newUser.avatar)
             });
         }
 
-        if (!fields.length) return;
+        if (!changes.length) return;
 
         for (const guild of client.guilds.cache.values()) {
             const logGuild = await getLogGuild(client, guild.id);
@@ -49,11 +46,10 @@ module.exports = new Event({
             const member = await logGuild.members.fetch(newUser.id).catch(() => null);
             if (!member) continue;
 
-            const thumbnailUrl = oldUser.avatar !== newUser.avatar
-                ? avatarUrl(newUser, newUser.avatar)
-                : null;
+            for (const change of changes) {
+                await sendProfileChangeLog(logGuild, newUser, change);
+            }
 
-            await sendProfileChangeLog(client, logGuild, newUser, fields, thumbnailUrl);
             break;
         }
     }
