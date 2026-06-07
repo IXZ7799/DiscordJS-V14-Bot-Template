@@ -2,8 +2,9 @@ const Event = require("../../structure/Event");
 const config = require("../../config");
 const {
     sendProfileChangeLog,
-    getLogGuild,
+    getProfileLogTarget,
     formatNewValue,
+    avatarUrl,
     guildAvatarUrl
 } = require("../../utils/profileChangeLog");
 
@@ -23,13 +24,39 @@ module.exports = new Event({
 
         if (newMember.user.bot) return;
 
-        const logGuild = await getLogGuild(client, newMember.guild.id);
-        if (!logGuild) return;
+        const target = await getProfileLogTarget(client);
+        if (!target || newMember.guild.id !== target.guild.id) return;
 
         const changes = [];
+        const user = newMember.user;
+
+        if (oldMember.user.username !== user.username) {
+            changes.push({
+                type: 'username',
+                title: 'Username update',
+                detail: formatNewValue(user.username)
+            });
+        }
+
+        if (oldMember.user.globalName !== user.globalName) {
+            changes.push({
+                type: 'globalName',
+                title: 'Display name update',
+                detail: formatNewValue(user.globalName)
+            });
+        }
+
+        if (oldMember.user.avatar !== user.avatar) {
+            changes.push({
+                type: 'avatar',
+                title: 'Avatar update',
+                thumbnailUrl: avatarUrl(user, user.avatar)
+            });
+        }
 
         if (oldMember.nickname !== newMember.nickname) {
             changes.push({
+                type: 'nickname',
                 title: 'Server nickname update',
                 detail: formatNewValue(newMember.nickname)
             });
@@ -37,6 +64,7 @@ module.exports = new Event({
 
         if (oldMember.avatar !== newMember.avatar) {
             changes.push({
+                type: 'serverAvatar',
                 title: 'Server profile picture update',
                 thumbnailUrl: newMember.avatar
                     ? guildAvatarUrl(newMember, newMember.avatar)
@@ -44,10 +72,8 @@ module.exports = new Event({
             });
         }
 
-        if (!changes.length) return;
-
         for (const change of changes) {
-            await sendProfileChangeLog(logGuild, newMember.user, change);
+            await sendProfileChangeLog(target, user, change);
         }
     }
 }).toJSON();

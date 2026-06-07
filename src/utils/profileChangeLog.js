@@ -2,6 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const config = require('../config');
 
 const PROFILE_COLOR = 0x5865F2;
+const recentLogs = new Map();
 
 /**
  * @param {import('discord.js').User} user
@@ -26,16 +27,50 @@ const guildAvatarUrl = (member, hash) => {
 };
 
 /**
- * @param {import('discord.js').Guild} guild
- * @param {import('discord.js').User} user
- * @param {{ title: string, thumbnailUrl?: string | null, detail?: string | null }} change
+ * @param {string} userId
+ * @param {string} type
  */
-const sendProfileChangeLog = async (guild, user, change) => {
-    const logChannelId = config.profileWatch?.logChannelId;
-    if (!logChannelId) return;
+const wasRecentlyLogged = (userId, type) => {
+    const key = `${userId}:${type}`;
+    const expires = recentLogs.get(key);
 
-    const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
-    if (!logChannel?.isTextBased()) return;
+    if (expires && expires > Date.now()) return true;
+
+    recentLogs.set(key, Date.now() + 5000);
+    return false;
+};
+
+/**
+ * @param {import('discord.js').Client} client
+ */
+const getProfileLogTarget = async (client) => {
+    const logChannelId = config.profileWatch?.logChannelId;
+    if (!logChannelId) return null;
+
+    const channel = await client.channels.fetch(logChannelId).catch(() => null);
+    if (!channel?.isTextBased() || !channel.guild) return null;
+
+    return { guild: channel.guild, channel };
+};
+
+/**
+ * @param {import('discord.js').Guild} guild
+ * @param {string} userId
+ */
+const isMemberInGuild = async (guild, userId) => {
+    if (guild.members.cache.has(userId)) return true;
+
+    const member = await guild.members.fetch({ user: userId, force: false }).catch(() => null);
+    return Boolean(member);
+};
+
+/**
+ * @param {{ channel: import('discord.js').TextBasedChannel }} target
+ * @param {import('discord.js').User} user
+ * @param {{ title: string, thumbnailUrl?: string | null, detail?: string | null, type: string }} change
+ */
+const sendProfileChangeLog = async (target, user, change) => {
+    if (wasRecentlyLogged(user.id, change.type)) return;
 
     const description = change.detail
         ? `<@${user.id}>\n${change.detail}`
@@ -56,22 +91,7 @@ const sendProfileChangeLog = async (guild, user, change) => {
         embed.setThumbnail(change.thumbnailUrl);
     }
 
-    await logChannel.send({ embeds: [embed] });
-};
-
-/**
- * @param {import('discord.js').Client} client
- * @param {string} guildId
- */
-const getLogGuild = async (client, guildId) => {
-    const logChannelId = config.profileWatch?.logChannelId;
-    if (!logChannelId) return null;
-
-    const logChannel = await client.channels.fetch(logChannelId).catch(() => null);
-    if (!logChannel?.isTextBased() || !logChannel.guild) return null;
-    if (logChannel.guild.id !== guildId) return null;
-
-    return logChannel.guild;
+    await target.channel.send({ embeds: [embed] });
 };
 
 /**
@@ -84,7 +104,8 @@ const formatNewValue = (value) => {
 
 module.exports = {
     sendProfileChangeLog,
-    getLogGuild,
+    getProfileLogTarget,
+    isMemberInGuild,
     formatNewValue,
     avatarUrl,
     guildAvatarUrl
