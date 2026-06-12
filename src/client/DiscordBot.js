@@ -1,4 +1,4 @@
-const { Client, Collection, Partials } = require("discord.js");
+const { Client, Collection, Partials, GatewayIntentBits } = require("discord.js");
 const CommandsHandler = require("./handler/CommandsHandler");
 const { warn, error, success } = require("../utils/Console");
 const config = require("../config");
@@ -17,7 +17,13 @@ class DiscordBot extends Client {
 
     constructor() {
         super({
-            intents: 3276799,
+            intents: [
+                GatewayIntentBits.Guilds,
+                GatewayIntentBits.GuildMembers,
+                GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.GuildMessageReactions,
+                GatewayIntentBits.MessageContent
+            ],
             partials: [
                 Partials.Channel,
                 Partials.GuildMember,

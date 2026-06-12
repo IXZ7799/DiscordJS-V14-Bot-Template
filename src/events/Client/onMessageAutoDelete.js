@@ -1,6 +1,7 @@
 const { EmbedBuilder } = require("discord.js");
 const Event = require("../../structure/Event");
 const config = require("../../config");
+const { info } = require("../../utils/Console");
 const deleteUserMessagesToday = require("../../utils/deleteUserMessagesToday");
 
 /**
@@ -19,30 +20,54 @@ const getDeletedImageUrl = (message) => {
 };
 
 /**
+ * @param {import('discord.js').Message} message
+ */
+const getDeletedContent = (message) => {
+    const parts = [];
+
+    if (message.content != null && message.content.length > 0) {
+        parts.push(message.content);
+    }
+
+    if (message.stickers?.size) {
+        parts.push(`Sticker: ${[...message.stickers.values()].map((s) => s.name).join(', ')}`);
+    }
+
+    for (const attachment of message.attachments.values()) {
+        if (attachment.contentType?.startsWith('image/')) {
+            parts.push(`[Image: ${attachment.name}](${attachment.url})`);
+        } else {
+            parts.push(`[File: ${attachment.name}](${attachment.url})`);
+        }
+    }
+
+    for (const embed of message.embeds) {
+        const embedParts = [embed.title, embed.description, embed.url].filter(Boolean);
+        if (embedParts.length) parts.push(embedParts.join('\n'));
+    }
+
+    return parts.join('\n');
+};
+
+/**
  * @param {import('discord.js').User} user
- * @param {{ channelId: string, content: string, imageUrl: string | null }} context
+ * @param {{ channelId: string, messageId: string, content: string, imageUrl: string | null }} context
  */
 const createBanEmbed = (user, context) => {
     const avatarURL = user.displayAvatarURL({ size: 4096 });
+    const header = `Message sent by <@${user.id}> deleted in <#${context.channelId}>`;
+    const body = context.content.length ? context.content : '*No message content was captured*';
+    const description = `${header}\n\n${body.length > 3900 ? `${body.slice(0, 3897)}...` : body}`;
 
     const embed = new EmbedBuilder()
         .setAuthor({
-            name: 'Member Banned',
+            name: user.username,
             iconURL: avatarURL
         })
-        .setDescription(`<@${user.id}> ${user.username} banned for posting in <#${context.channelId}>.`)
+        .setDescription(description)
         .setColor(0xEE7026)
-        .setThumbnail(avatarURL)
-        .setFooter({ text: `ID: ${user.id}` })
+        .setFooter({ text: `Author: ${user.id} | Message ID: ${context.messageId}` })
         .setTimestamp();
-
-    const text = context.content?.trim();
-    if (text) {
-        embed.addFields({
-            name: 'Deleted Text',
-            value: text.length > 1024 ? `${text.slice(0, 1021)}...` : text
-        });
-    }
 
     if (context.imageUrl) {
         embed.setImage(context.imageUrl);
@@ -61,17 +86,22 @@ module.exports = new Event({
 
         const { author, guild } = message;
 
-        try {
-            if (message.partial) await message.fetch();
-        } catch {
-            // Could not load message content.
+        if (message.partial) {
+            try {
+                await message.fetch();
+            } catch {
+                info(`[AutoBan] Could not fetch partial message ${message.id}`);
+            }
         }
 
         const banContext = {
             channelId: message.channelId,
-            content: message.content ?? '',
+            messageId: message.id,
+            content: getDeletedContent(message),
             imageUrl: getDeletedImageUrl(message)
         };
+
+        info(`[AutoBan] Captured message ${message.id} from ${author.tag}: "${banContext.content}"`);
 
         try {
             await message.delete();
