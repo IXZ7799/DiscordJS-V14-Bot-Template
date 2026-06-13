@@ -4,7 +4,7 @@ const { info, warn } = require("../../utils/Console");
 const {
     sendProfileChangeLog,
     getProfileLogTarget,
-    formatNewValue,
+    getTextChangeTitle,
     avatarUrl,
     guildAvatarUrl
 } = require("../../utils/profileChangeLog");
@@ -13,41 +13,22 @@ module.exports = new Event({
     event: 'guildMemberUpdate',
     once: false,
     run: async (client, oldMember, newMember) => {
-        info(`[ProfileWatch] guildMemberUpdate fired for ${newMember.user.tag} (${newMember.id}) in ${newMember.guild.name}`);
-
-        if (!config.profileWatch?.logChannelId) {
-            warn('[ProfileWatch] guildMemberUpdate skipped: profileWatch.logChannelId not set');
-            return;
-        }
+        if (!config.profileWatch?.logChannelId) return;
 
         if (oldMember.partial) {
-            try { await oldMember.fetch(); } catch {
-                warn(`[ProfileWatch] guildMemberUpdate: failed to fetch oldMember ${newMember.id}`);
-                return;
-            }
+            try { await oldMember.fetch(); } catch { return; }
         }
 
         if (newMember.partial) {
-            try { await newMember.fetch(); } catch {
-                warn(`[ProfileWatch] guildMemberUpdate: failed to fetch newMember ${newMember.id}`);
-                return;
-            }
+            try { await newMember.fetch(); } catch { return; }
         }
 
-        if (newMember.user.bot) {
-            info('[ProfileWatch] guildMemberUpdate skipped: user is a bot');
-            return;
-        }
-
-        info(`[ProfileWatch] guildMemberUpdate compare — username: ${oldMember.user.username} -> ${newMember.user.username}, globalName: ${oldMember.user.globalName ?? 'null'} -> ${newMember.user.globalName ?? 'null'}, user.avatar: ${oldMember.user.avatar ?? 'null'} -> ${newMember.user.avatar ?? 'null'}, nickname: ${oldMember.nickname ?? 'null'} -> ${newMember.nickname ?? 'null'}, member.avatar: ${oldMember.avatar ?? 'null'} -> ${newMember.avatar ?? 'null'}`);
+        if (newMember.user.bot) return;
 
         const target = await getProfileLogTarget(client);
         if (!target) return;
 
-        if (newMember.guild.id !== target.guild.id) {
-            info(`[ProfileWatch] guildMemberUpdate skipped: guild ${newMember.guild.name} is not the log guild ${target.guild.name}`);
-            return;
-        }
+        if (newMember.guild.id !== target.guild.id) return;
 
         const changes = [];
         const user = newMember.user;
@@ -55,22 +36,28 @@ module.exports = new Event({
         if (oldMember.user.username !== user.username) {
             changes.push({
                 type: 'username',
-                title: 'Username update',
-                detail: formatNewValue(user.username)
+                style: 'text',
+                title: getTextChangeTitle('Username', oldMember.user.username, user.username),
+                before: oldMember.user.username,
+                after: user.username
             });
         }
 
         if (oldMember.user.globalName !== user.globalName) {
             changes.push({
                 type: 'globalName',
-                title: 'Display name update',
-                detail: formatNewValue(user.globalName)
+                style: 'text',
+                title: getTextChangeTitle('Display name', oldMember.user.globalName, user.globalName),
+                before: oldMember.user.globalName,
+                after: user.globalName,
+                beforeFallback: user.username
             });
         }
 
         if (oldMember.user.avatar !== user.avatar) {
             changes.push({
                 type: 'avatar',
+                style: 'avatar',
                 title: 'Avatar update',
                 thumbnailUrl: avatarUrl(user, user.avatar)
             });
@@ -79,14 +66,18 @@ module.exports = new Event({
         if (oldMember.nickname !== newMember.nickname) {
             changes.push({
                 type: 'nickname',
-                title: 'Server nickname update',
-                detail: formatNewValue(newMember.nickname)
+                style: 'text',
+                title: getTextChangeTitle('Nickname', oldMember.nickname, newMember.nickname),
+                before: oldMember.nickname,
+                after: newMember.nickname,
+                beforeFallback: user.username
             });
         }
 
         if (oldMember.avatar !== newMember.avatar) {
             changes.push({
                 type: 'serverAvatar',
+                style: 'avatar',
                 title: 'Server profile picture update',
                 thumbnailUrl: newMember.avatar
                     ? guildAvatarUrl(newMember, newMember.avatar)
@@ -94,12 +85,9 @@ module.exports = new Event({
             });
         }
 
-        if (!changes.length) {
-            info(`[ProfileWatch] guildMemberUpdate: no tracked changes for ${newMember.id}`);
-            return;
-        }
+        if (!changes.length) return;
 
-        info(`[ProfileWatch] guildMemberUpdate: ${changes.length} change(s) for ${newMember.id}:`, changes.map((c) => c.type).join(', '));
+        info(`[ProfileWatch] guildMemberUpdate: logging ${changes.length} change(s) for ${newMember.id}`);
 
         for (const change of changes) {
             await sendProfileChangeLog(target, user, change);

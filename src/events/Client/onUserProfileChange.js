@@ -4,7 +4,7 @@ const { info, warn } = require("../../utils/Console");
 const {
     sendProfileChangeLog,
     getProfileLogTarget,
-    formatNewValue,
+    getTextChangeTitle,
     avatarUrl
 } = require("../../utils/profileChangeLog");
 
@@ -26,29 +26,33 @@ module.exports = new Event({
             return;
         }
 
-        info(`[ProfileWatch] compare — username: ${oldUser.username} -> ${newUser.username}, globalName: ${oldUser.globalName ?? 'null'} -> ${newUser.globalName ?? 'null'}, avatar: ${oldUser.avatar ?? 'null'} -> ${newUser.avatar ?? 'null'}`);
-
         const changes = [];
 
         if (oldUser.username !== newUser.username) {
             changes.push({
                 type: 'username',
-                title: 'Username update',
-                detail: formatNewValue(newUser.username)
+                style: 'text',
+                title: getTextChangeTitle('Username', oldUser.username, newUser.username),
+                before: oldUser.username,
+                after: newUser.username
             });
         }
 
         if (oldUser.globalName !== newUser.globalName) {
             changes.push({
                 type: 'globalName',
-                title: 'Display name update',
-                detail: formatNewValue(newUser.globalName)
+                style: 'text',
+                title: getTextChangeTitle('Display name', oldUser.globalName, newUser.globalName),
+                before: oldUser.globalName,
+                after: newUser.globalName,
+                beforeFallback: newUser.username
             });
         }
 
         if (oldUser.avatar !== newUser.avatar) {
             changes.push({
                 type: 'avatar',
+                style: 'avatar',
                 title: 'Avatar update',
                 thumbnailUrl: avatarUrl(newUser, newUser.avatar)
             });
@@ -58,8 +62,6 @@ module.exports = new Event({
             info(`[ProfileWatch] userUpdate: no tracked changes for ${newUser.id}`);
             return;
         }
-
-        info(`[ProfileWatch] userUpdate: logging ${changes.length} change(s): ${changes.map((c) => c.type).join(', ')}`);
 
         for (const change of changes) {
             await sendProfileChangeLog(target, newUser, change);

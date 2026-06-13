@@ -28,6 +28,46 @@ const guildAvatarUrl = (member, hash) => {
 };
 
 /**
+ * @param {string | null | undefined} value
+ * @param {string | null | undefined} [fallback]
+ */
+const displayValue = (value, fallback = null) => {
+    if (value != null && value.length > 0) {
+        return value.length > 256 ? `${value.slice(0, 253)}...` : value;
+    }
+
+    if (fallback != null && fallback.length > 0) {
+        return fallback.length > 256 ? `${fallback.slice(0, 253)}...` : fallback;
+    }
+
+    return 'None';
+};
+
+/**
+ * @param {string | null | undefined} before
+ * @param {string | null | undefined} after
+ * @param {string | null | undefined} [beforeFallback]
+ */
+const buildBeforeAfterDescription = (before, after, beforeFallback = null) => {
+    return `**Before:** ${displayValue(before, beforeFallback)}\n**+After:** ${displayValue(after)}`;
+};
+
+/**
+ * @param {string} label
+ * @param {string | null | undefined} before
+ * @param {string | null | undefined} after
+ */
+const getTextChangeTitle = (label, before, after) => {
+    const hadBefore = before != null && before.length > 0;
+    const hasAfter = after != null && after.length > 0;
+
+    if (!hadBefore && hasAfter) return `${label} added`;
+    if (hadBefore && !hasAfter) return `${label} removed`;
+
+    return `${label} changed`;
+};
+
+/**
  * @param {string} userId
  * @param {string} type
  */
@@ -65,45 +105,28 @@ const getProfileLogTarget = async (client) => {
         return null;
     }
 
-    info(`[ProfileWatch] Log target ready: #${channel.name} in ${channel.guild.name}`);
     return { guild: channel.guild, channel };
-};
-
-/**
- * @param {import('discord.js').Guild} guild
- * @param {string} userId
- */
-const isMemberInGuild = async (guild, userId) => {
-    if (guild.members.cache.has(userId)) {
-        info(`[ProfileWatch] User ${userId} found in ${guild.name} member cache`);
-        return true;
-    }
-
-    const member = await guild.members.fetch({ user: userId, force: false }).catch((err) => {
-        warn(`[ProfileWatch] Member fetch failed for ${userId} in ${guild.name}:`, err.message);
-        return null;
-    });
-
-    if (member) {
-        info(`[ProfileWatch] User ${userId} fetched in ${guild.name}`);
-        return true;
-    }
-
-    warn(`[ProfileWatch] User ${userId} is not a member of ${guild.name}`);
-    return false;
 };
 
 /**
  * @param {{ channel: import('discord.js').TextBasedChannel }} target
  * @param {import('discord.js').User} user
- * @param {{ title: string, thumbnailUrl?: string | null, detail?: string | null, type: string }} change
+ * @param {{
+ *   title: string,
+ *   type: string,
+ *   style?: 'avatar' | 'text',
+ *   before?: string | null,
+ *   after?: string | null,
+ *   beforeFallback?: string | null,
+ *   thumbnailUrl?: string | null
+ * }} change
  */
 const sendProfileChangeLog = async (target, user, change) => {
     if (wasRecentlyLogged(user.id, change.type)) return;
 
-    const description = change.detail
-        ? `<@${user.id}>\n${change.detail}`
-        : `<@${user.id}>`;
+    const description = change.style === 'avatar'
+        ? `<@${user.id}>`
+        : buildBeforeAfterDescription(change.before, change.after, change.beforeFallback ?? user.username);
 
     const embed = new EmbedBuilder()
         .setAuthor({
@@ -128,19 +151,10 @@ const sendProfileChangeLog = async (target, user, change) => {
     }
 };
 
-/**
- * @param {string | null | undefined} value
- */
-const formatNewValue = (value) => {
-    if (!value?.length) return '*None*';
-    return `**${value.length > 256 ? `${value.slice(0, 253)}...` : value}**`;
-};
-
 module.exports = {
     sendProfileChangeLog,
     getProfileLogTarget,
-    isMemberInGuild,
-    formatNewValue,
+    getTextChangeTitle,
     avatarUrl,
     guildAvatarUrl
 };
