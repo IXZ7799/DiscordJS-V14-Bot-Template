@@ -9,6 +9,26 @@ const getSettings = () => config.quarantine ?? {};
 
 const getKeyword = () => (getSettings().keyword ?? 'vani').toLowerCase();
 
+/**
+ * @param {Promise<unknown>} promise
+ * @param {number} ms
+ * @param {string} label
+ */
+const withTimeout = async (promise, ms, label = 'operation') => {
+    let timer;
+
+    try {
+        return await Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+            })
+        ]);
+    } finally {
+        clearTimeout(timer);
+    }
+};
+
 const containsKeyword = (text) => {
     if (!text || typeof text !== 'string') return false;
     return text.toLowerCase().includes(getKeyword());
@@ -21,9 +41,12 @@ const containsKeyword = (text) => {
  */
 const fetchUserBio = async (client, userId, guildId) => {
     try {
-        const profile = await client.rest.get(
-            `/users/${userId}/profile?guild_id=${guildId}&with_mutual_guilds=false&with_mutual_friends_count=false`,
-            { signal: AbortSignal.timeout(8000) }
+        const profile = await withTimeout(
+            client.rest.get(
+                `/users/${userId}/profile?guild_id=${guildId}&with_mutual_guilds=false&with_mutual_friends_count=false`
+            ),
+            5000,
+            'bio fetch'
         );
 
         return profile?.user?.bio ?? profile?.user_profile?.bio ?? '';
@@ -110,11 +133,11 @@ const createFlagEmbed = (user, triggeredFields) => {
  * @param {import('discord.js').GuildMember} member
  * @param {import('discord.js').Client} client
  * @param {import('discord.js').User} [user]
- * @param {{ quiet?: boolean }} [options]
+ * @param {{ quiet?: boolean, bulkScan?: boolean }} [options]
  * @returns {Promise<'quarantined' | 'clean' | 'skipped'>}
  */
 const checkAndQuarantine = async (member, client, user = member.user, options = {}) => {
-    const { quiet = false } = options;
+    const { quiet = false, bulkScan = false } = options;
     const settings = getSettings();
 
     if (settings.enabled === false) {
@@ -128,9 +151,11 @@ const checkAndQuarantine = async (member, client, user = member.user, options = 
     }
 
     const key = `${member.guild.id}-${member.id}`;
-    if (processing.has(key)) return 'skipped';
+    const trackProcessing = !bulkScan;
 
-    processing.add(key);
+    if (trackProcessing && processing.has(key)) return 'skipped';
+
+    if (trackProcessing) processing.add(key);
 
     try {
         if (!canQuarantine(member, { quiet })) return 'skipped';
@@ -149,27 +174,47 @@ const checkAndQuarantine = async (member, client, user = member.user, options = 
         if (!triggeredFields.length) return 'clean';
 
         const timeoutMs = (settings.timeoutDays ?? 7) * 24 * 60 * 60 * 1000;
+        const timeoutReason = `Quarantine: "${getKeyword()}" in ${triggeredFields.join(', ')}`;
 
-        await member.timeout(timeoutMs, `Quarantine: "${getKeyword()}" in ${triggeredFields.join(', ')}`);
+        await withTimeout(
+            member.timeout(timeoutMs, timeoutReason),
+            10000,
+            'member timeout'
+        );
 
         if (!quiet) info(`[Quarantine] Timed out ${user.tag} for ${settings.timeoutDays ?? 7} days`);
 
-        const logChannel = await member.guild.channels.fetch(settings.flagChannelId).catch(() => null);
+        const logChannel = await withTimeout(
+            member.guild.channels.fetch(settings.flagChannelId),
+            5000,
+            'flag channel fetch'
+        ).catch(() => null);
+
         if (!logChannel?.isTextBased()) {
             if (!quiet) warn(`[Quarantine] Flag channel ${settings.flagChannelId} not found or not text-based`);
             return 'quarantined';
         }
 
-        await logChannel.send({ embeds: [createFlagEmbed(user, triggeredFields)] });
+        const flagMessage = { embeds: [createFlagEmbed(user, triggeredFields)] };
+
+        if (bulkScan) {
+            logChannel.send(flagMessage).catch((err) => {
+                error(`[Quarantine] Failed to send flag embed for ${user.id}:`, err.message);
+            });
+        } else {
+            await logChannel.send(flagMessage);
+        }
 
         if (!quiet) info(`[Quarantine] Sent flag embed for ${user.id}`);
 
         return 'quarantined';
     } catch (err) {
-        if (!quiet) error(`[Quarantine] Failed for ${member.id}:`, err.message);
+        if (!quiet || bulkScan) {
+            warn(`[Quarantine] Failed for ${member.id}: ${err.message}`);
+        }
         return 'skipped';
     } finally {
-        processing.delete(key);
+        if (trackProcessing) processing.delete(key);
     }
 };
 
@@ -178,8 +223,8 @@ const checkAndQuarantine = async (member, client, user = member.user, options = 
  * @param {import('discord.js').Client} client
  */
 const runGuildQuarantineCheck = async (guild, client) => {
-    const CONCURRENCY = 8;
-    const LOG_EVERY = 100;
+    const CONCURRENCY = 5;
+    const LOG_EVERY = 25;
 
     info(`[Quarantine] Starting guild scan in ${guild.name} (${guild.id})`);
 
@@ -200,13 +245,15 @@ const runGuildQuarantineCheck = async (guild, client) => {
         return { checked: 0, quarantined: 0, keyword: getKeyword() };
     }
 
+    info(`[Quarantine] Member checks starting...`);
+
     const worker = async () => {
         while (true) {
             const index = nextIndex++;
             if (index >= members.length) break;
 
             const member = members[index];
-            const result = await checkAndQuarantine(member, client, member.user, { quiet: true });
+            const result = await checkAndQuarantine(member, client, member.user, { quiet: true, bulkScan: true });
 
             if (result === 'quarantined') {
                 quarantined++;
@@ -214,6 +261,10 @@ const runGuildQuarantineCheck = async (guild, client) => {
             }
 
             completed++;
+
+            if (completed === 1) {
+                info(`[Quarantine] First member check finished — scan is running`);
+            }
 
             if (completed % LOG_EVERY === 0 || completed === total) {
                 info(`[Quarantine] Scan progress: ${completed}/${total} checked, ${quarantined} quarantined`);
