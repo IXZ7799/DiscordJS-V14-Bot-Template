@@ -6,6 +6,7 @@ const config = require("../../config");
 
 const ESTIMATE_SECONDS_PER_MEMBER = 1.5;
 const PROGRESS_UPDATE_INTERVAL_MS = 10000;
+const PROGRESS_EDIT_INTERVAL_MS = 5000;
 const MIN_PACE_SAMPLES = 5;
 
 /**
@@ -88,15 +89,35 @@ module.exports = new ApplicationCommand({
         const keyword = getKeyword();
         const progress = { current: 0, total: 0, scanStartTime: null };
         const etaState = { lowestEta: null };
+        let lastProgressEdit = 0;
+        let progressEditPending = false;
+
+        const refreshProgressMessage = async (force = false) => {
+            const now = Date.now();
+
+            if (!force && now - lastProgressEdit < PROGRESS_EDIT_INTERVAL_MS) {
+                if (!progressEditPending) {
+                    progressEditPending = true;
+                    setTimeout(() => {
+                        progressEditPending = false;
+                        refreshProgressMessage(true);
+                    }, PROGRESS_EDIT_INTERVAL_MS - (now - lastProgressEdit));
+                }
+                return;
+            }
+
+            lastProgressEdit = Date.now();
+            await interaction.editReply({
+                content: getProgressMessage(progress, etaState)
+            }).catch(() => null);
+        };
 
         await interaction.editReply({
             content: 'Checking all users, time till finished: **estimating**...'
         });
 
         const interval = setInterval(() => {
-            interaction.editReply({
-                content: getProgressMessage(progress, etaState)
-            }).catch(() => null);
+            refreshProgressMessage(true);
         }, PROGRESS_UPDATE_INTERVAL_MS);
 
         let result;
@@ -110,11 +131,7 @@ module.exports = new ApplicationCommand({
                     progress.scanStartTime = Date.now();
                 }
 
-                if (total > 0 && (scanStarted || (current === 0 && !progress.scanStartTime))) {
-                    await interaction.editReply({
-                        content: getProgressMessage(progress, etaState)
-                    }).catch(() => null);
-                }
+                refreshProgressMessage(scanStarted || current === 0);
             });
         } finally {
             clearInterval(interval);

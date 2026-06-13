@@ -22,7 +22,8 @@ const containsKeyword = (text) => {
 const fetchUserBio = async (client, userId, guildId) => {
     try {
         const profile = await client.rest.get(
-            `/users/${userId}/profile?guild_id=${guildId}&with_mutual_guilds=false&with_mutual_friends_count=false`
+            `/users/${userId}/profile?guild_id=${guildId}&with_mutual_guilds=false&with_mutual_friends_count=false`,
+            { signal: AbortSignal.timeout(8000) }
         );
 
         return profile?.user?.bio ?? profile?.user_profile?.bio ?? '';
@@ -134,8 +135,12 @@ const checkAndQuarantine = async (member, client, user = member.user, options = 
     try {
         if (!canQuarantine(member, { quiet })) return 'skipped';
 
-        const bio = await fetchUserBio(client, member.id, member.guild.id);
-        const triggeredFields = getViolationFields(member, user, bio);
+        let triggeredFields = getViolationFields(member, user, '');
+
+        if (!triggeredFields.length) {
+            const bio = await fetchUserBio(client, member.id, member.guild.id);
+            triggeredFields = getViolationFields(member, user, bio);
+        }
 
         if (!quiet) {
             info(`[Quarantine] Checked ${user.tag} (${user.id}) in ${member.guild.name} — username: "${user.username}", globalName: "${user.globalName ?? ''}", nickname: "${member.nickname ?? ''}", triggered: [${triggeredFields.join(', ')}]`);
@@ -171,7 +176,7 @@ const checkAndQuarantine = async (member, client, user = member.user, options = 
 /**
  * @param {import('discord.js').Guild} guild
  * @param {import('discord.js').Client} client
- * @param {(current: number, total: number) => Promise<void> | void} [onProgress]
+ * @param {(current: number, total: number, scanStarted?: boolean) => Promise<void> | void} [onProgress]
  */
 const runGuildQuarantineCheck = async (guild, client, onProgress) => {
     await guild.members.fetch().catch(() => null);
@@ -179,16 +184,34 @@ const runGuildQuarantineCheck = async (guild, client, onProgress) => {
     const members = [...guild.members.cache.values()].filter((member) => !member.user.bot);
     const total = members.length;
     let quarantined = 0;
+    let completed = 0;
+    let nextIndex = 0;
 
     if (onProgress) await onProgress(0, total, false);
 
-    for (let index = 0; index < members.length; index++) {
-        if (onProgress) await onProgress(index, total, index === 0);
+    const CONCURRENCY = 8;
 
-        const member = members[index];
+    const worker = async () => {
+        while (true) {
+            const index = nextIndex++;
+            if (index >= members.length) break;
 
-        const result = await checkAndQuarantine(member, client, member.user, { quiet: true });
-        if (result === 'quarantined') quarantined++;
+            if (index === 0 && onProgress) await onProgress(0, total, true);
+
+            const member = members[index];
+            const result = await checkAndQuarantine(member, client, member.user, { quiet: true });
+
+            if (result === 'quarantined') quarantined++;
+
+            completed++;
+            if (onProgress) await onProgress(completed, total, false);
+        }
+    };
+
+    const workerCount = Math.min(CONCURRENCY, members.length);
+
+    if (workerCount > 0) {
+        await Promise.all(Array.from({ length: workerCount }, () => worker()));
     }
 
     if (onProgress) await onProgress(total, total, false);
