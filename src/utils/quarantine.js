@@ -180,17 +180,18 @@ const runGuildQuarantineCheck = async (guild, client, onProgress) => {
     const total = members.length;
     let quarantined = 0;
 
-    if (onProgress) await onProgress(0, total);
+    if (onProgress) await onProgress(0, total, false);
 
     for (let index = 0; index < members.length; index++) {
+        if (onProgress) await onProgress(index, total, index === 0);
+
         const member = members[index];
-        const current = index + 1;
 
         const result = await checkAndQuarantine(member, client, member.user, { quiet: true });
         if (result === 'quarantined') quarantined++;
-
-        if (onProgress) await onProgress(current, total);
     }
+
+    if (onProgress) await onProgress(total, total, false);
 
     return { checked: total, quarantined, keyword: getKeyword() };
 };

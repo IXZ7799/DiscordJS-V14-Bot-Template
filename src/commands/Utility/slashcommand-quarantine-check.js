@@ -6,29 +6,50 @@ const config = require("../../config");
 
 const ESTIMATE_SECONDS_PER_MEMBER = 1.5;
 const PROGRESS_UPDATE_INTERVAL_MS = 10000;
+const MIN_PACE_SAMPLES = 5;
 
 /**
- * @param {{ current: number, total: number }} progress
- * @param {number} startTime
+ * @param {{ current: number, total: number, scanStartTime: number | null }} progress
+ * @param {{ lowestEta: number | null }} state
  */
-const getProgressMessage = (progress, startTime) => {
+const getProgressMessage = (progress, state) => {
+    const { current, total, scanStartTime } = progress;
+
+    if (total <= 0) {
+        return 'Checking all users, time till finished: **estimating**...';
+    }
+
+    const remainingMembers = total - current;
+
+    if (remainingMembers <= 0) {
+        return 'Checking all users, finishing up...';
+    }
+
     let secondsLeft;
 
-    if (progress.total <= 0) {
-        secondsLeft = 0;
-    } else if (progress.current <= 0) {
-        secondsLeft = Math.max(1, Math.ceil(progress.total * ESTIMATE_SECONDS_PER_MEMBER));
-    } else if (progress.current >= progress.total) {
-        secondsLeft = 0;
+    if (!scanStartTime) {
+        secondsLeft = Math.max(1, Math.ceil(total * ESTIMATE_SECONDS_PER_MEMBER));
     } else {
-        const elapsedSeconds = (Date.now() - startTime) / 1000;
-        const secondsPerMember = elapsedSeconds / progress.current;
-        secondsLeft = Math.max(1, Math.ceil(secondsPerMember * (progress.total - progress.current)));
+        const elapsedSeconds = (Date.now() - scanStartTime) / 1000;
+        const initialEstimate = total * ESTIMATE_SECONDS_PER_MEMBER;
+
+        if (current < MIN_PACE_SAMPLES) {
+            secondsLeft = Math.max(1, Math.ceil(initialEstimate - elapsedSeconds));
+        } else {
+            const secondsPerMember = elapsedSeconds / current;
+            secondsLeft = Math.max(1, Math.ceil(secondsPerMember * remainingMembers));
+        }
     }
+
+    if (state.lowestEta !== null) {
+        secondsLeft = Math.min(state.lowestEta, secondsLeft);
+    }
+
+    state.lowestEta = secondsLeft;
 
     const label = secondsLeft === 1 ? 'second' : 'seconds';
 
-    return `Checking all users, time till finished: **${secondsLeft}** ${label}...`;
+    return `Checking all users (${current}/${total}), time till finished: **${secondsLeft}** ${label}...`;
 };
 
 module.exports = new ApplicationCommand({
@@ -65,8 +86,8 @@ module.exports = new ApplicationCommand({
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const keyword = getKeyword();
-        const progress = { current: 0, total: 0 };
-        const startTime = Date.now();
+        const progress = { current: 0, total: 0, scanStartTime: null };
+        const etaState = { lowestEta: null };
 
         await interaction.editReply({
             content: 'Checking all users, time till finished: **estimating**...'
@@ -74,20 +95,24 @@ module.exports = new ApplicationCommand({
 
         const interval = setInterval(() => {
             interaction.editReply({
-                content: getProgressMessage(progress, startTime)
+                content: getProgressMessage(progress, etaState)
             }).catch(() => null);
         }, PROGRESS_UPDATE_INTERVAL_MS);
 
         let result;
 
         try {
-            result = await runGuildQuarantineCheck(interaction.guild, client, async (current, total) => {
+            result = await runGuildQuarantineCheck(interaction.guild, client, async (current, total, scanStarted) => {
                 progress.current = current;
                 progress.total = total;
 
-                if (current === 0 && total > 0) {
+                if (scanStarted) {
+                    progress.scanStartTime = Date.now();
+                }
+
+                if (total > 0 && (scanStarted || (current === 0 && !progress.scanStartTime))) {
                     await interaction.editReply({
-                        content: getProgressMessage(progress, startTime)
+                        content: getProgressMessage(progress, etaState)
                     }).catch(() => null);
                 }
             });
