@@ -4,55 +4,6 @@ const ApplicationCommand = require("../../structure/ApplicationCommand");
 const { runGuildQuarantineCheck, getKeyword } = require("../../utils/quarantine");
 const config = require("../../config");
 
-const ESTIMATE_SECONDS_PER_MEMBER = 1.5;
-const PROGRESS_UPDATE_INTERVAL_MS = 10000;
-const PROGRESS_EDIT_INTERVAL_MS = 5000;
-const MIN_PACE_SAMPLES = 5;
-
-/**
- * @param {{ current: number, total: number, scanStartTime: number | null }} progress
- * @param {{ lowestEta: number | null }} state
- */
-const getProgressMessage = (progress, state) => {
-    const { current, total, scanStartTime } = progress;
-
-    if (total <= 0) {
-        return 'Checking all users, time till finished: **estimating**...';
-    }
-
-    const remainingMembers = total - current;
-
-    if (remainingMembers <= 0) {
-        return 'Checking all users, finishing up...';
-    }
-
-    let secondsLeft;
-
-    if (!scanStartTime) {
-        secondsLeft = Math.max(1, Math.ceil(total * ESTIMATE_SECONDS_PER_MEMBER));
-    } else {
-        const elapsedSeconds = (Date.now() - scanStartTime) / 1000;
-        const initialEstimate = total * ESTIMATE_SECONDS_PER_MEMBER;
-
-        if (current < MIN_PACE_SAMPLES) {
-            secondsLeft = Math.max(1, Math.ceil(initialEstimate - elapsedSeconds));
-        } else {
-            const secondsPerMember = elapsedSeconds / current;
-            secondsLeft = Math.max(1, Math.ceil(secondsPerMember * remainingMembers));
-        }
-    }
-
-    if (state.lowestEta !== null) {
-        secondsLeft = Math.min(state.lowestEta, secondsLeft);
-    }
-
-    state.lowestEta = secondsLeft;
-
-    const label = secondsLeft === 1 ? 'second' : 'seconds';
-
-    return `Checking all users (${current}/${total}), time till finished: **${secondsLeft}** ${label}...`;
-};
-
 module.exports = new ApplicationCommand({
     command: {
         name: 'quarantine-check',
@@ -87,55 +38,12 @@ module.exports = new ApplicationCommand({
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const keyword = getKeyword();
-        const progress = { current: 0, total: 0, scanStartTime: null };
-        const etaState = { lowestEta: null };
-        let lastProgressEdit = 0;
-        let progressEditPending = false;
-
-        const refreshProgressMessage = async (force = false) => {
-            const now = Date.now();
-
-            if (!force && now - lastProgressEdit < PROGRESS_EDIT_INTERVAL_MS) {
-                if (!progressEditPending) {
-                    progressEditPending = true;
-                    setTimeout(() => {
-                        progressEditPending = false;
-                        refreshProgressMessage(true);
-                    }, PROGRESS_EDIT_INTERVAL_MS - (now - lastProgressEdit));
-                }
-                return;
-            }
-
-            lastProgressEdit = Date.now();
-            await interaction.editReply({
-                content: getProgressMessage(progress, etaState)
-            }).catch(() => null);
-        };
 
         await interaction.editReply({
-            content: 'Checking all users, time till finished: **estimating**...'
+            content: `Checking all members for **${keyword}** in username, display name, nickname, or bio.\n\nThis may take a while, so this message will update when the scan is finished.`
         });
 
-        const interval = setInterval(() => {
-            refreshProgressMessage(true);
-        }, PROGRESS_UPDATE_INTERVAL_MS);
-
-        let result;
-
-        try {
-            result = await runGuildQuarantineCheck(interaction.guild, client, async (current, total, scanStarted) => {
-                progress.current = current;
-                progress.total = total;
-
-                if (scanStarted) {
-                    progress.scanStartTime = Date.now();
-                }
-
-                refreshProgressMessage(scanStarted || current === 0);
-            });
-        } finally {
-            clearInterval(interval);
-        }
+        const result = await runGuildQuarantineCheck(interaction.guild, client);
 
         const embed = new EmbedBuilder()
             .setColor(result.quarantined > 0 ? 0x9B59B6 : 0x57F287)

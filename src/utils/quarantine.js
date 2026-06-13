@@ -176,10 +176,16 @@ const checkAndQuarantine = async (member, client, user = member.user, options = 
 /**
  * @param {import('discord.js').Guild} guild
  * @param {import('discord.js').Client} client
- * @param {(current: number, total: number, scanStarted?: boolean) => Promise<void> | void} [onProgress]
  */
-const runGuildQuarantineCheck = async (guild, client, onProgress) => {
-    await guild.members.fetch().catch(() => null);
+const runGuildQuarantineCheck = async (guild, client) => {
+    const CONCURRENCY = 8;
+    const LOG_EVERY = 100;
+
+    info(`[Quarantine] Starting guild scan in ${guild.name} (${guild.id})`);
+
+    await guild.members.fetch().catch((err) => {
+        warn(`[Quarantine] Member fetch failed in ${guild.name}: ${err.message}`);
+    });
 
     const members = [...guild.members.cache.values()].filter((member) => !member.user.bot);
     const total = members.length;
@@ -187,34 +193,38 @@ const runGuildQuarantineCheck = async (guild, client, onProgress) => {
     let completed = 0;
     let nextIndex = 0;
 
-    if (onProgress) await onProgress(0, total, false);
+    info(`[Quarantine] Scanning ${total} non-bot members (${CONCURRENCY} in parallel)`);
 
-    const CONCURRENCY = 8;
+    if (total === 0) {
+        info(`[Quarantine] Scan complete in ${guild.name}: no members to check`);
+        return { checked: 0, quarantined: 0, keyword: getKeyword() };
+    }
 
     const worker = async () => {
         while (true) {
             const index = nextIndex++;
             if (index >= members.length) break;
 
-            if (index === 0 && onProgress) await onProgress(0, total, true);
-
             const member = members[index];
             const result = await checkAndQuarantine(member, client, member.user, { quiet: true });
 
-            if (result === 'quarantined') quarantined++;
+            if (result === 'quarantined') {
+                quarantined++;
+                info(`[Quarantine] Quarantined during scan: ${member.user.tag} (${member.id})`);
+            }
 
             completed++;
-            if (onProgress) await onProgress(completed, total, false);
+
+            if (completed % LOG_EVERY === 0 || completed === total) {
+                info(`[Quarantine] Scan progress: ${completed}/${total} checked, ${quarantined} quarantined`);
+            }
         }
     };
 
     const workerCount = Math.min(CONCURRENCY, members.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
-    if (workerCount > 0) {
-        await Promise.all(Array.from({ length: workerCount }, () => worker()));
-    }
-
-    if (onProgress) await onProgress(total, total, false);
+    info(`[Quarantine] Scan complete in ${guild.name}: ${total} checked, ${quarantined} quarantined`);
 
     return { checked: total, quarantined, keyword: getKeyword() };
 };
