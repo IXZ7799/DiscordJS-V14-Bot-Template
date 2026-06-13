@@ -44,11 +44,12 @@ const displayValue = (value, fallback = null) => {
 };
 
 /**
+ * @param {import('discord.js').User} user
  * @param {string | null | undefined} before
  * @param {string | null | undefined} after
  * @param {string | null | undefined} [beforeFallback]
  */
-const buildBeforeAfterDescription = (before, after, beforeFallback = null) => {
+const buildBeforeAfterDescription = (user, before, after, beforeFallback = null) => {
     return `<@${user.id}>\n**Before:** ${displayValue(before, beforeFallback)}\n**After:** ${displayValue(after)}`;
 };
 
@@ -126,7 +127,7 @@ const sendProfileChangeLog = async (target, user, change) => {
 
     const description = change.style === 'avatar'
         ? `<@${user.id}>`
-        : buildBeforeAfterDescription(change.before, change.after, change.beforeFallback ?? user.username);
+        : buildBeforeAfterDescription(user, change.before, change.after, change.beforeFallback ?? user.username);
 
     const embed = new EmbedBuilder()
         .setAuthor({
