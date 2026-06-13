@@ -1,6 +1,5 @@
-const { success, info, warn } = require("../../utils/Console");
+const { success, warn } = require("../../utils/Console");
 const Event = require("../../structure/Event");
-const { scanGuildMembers } = require("../../utils/quarantine");
 const { getProfileLogTarget } = require("../../utils/profileChangeLog");
 const config = require("../../config");
 
@@ -23,13 +22,6 @@ module.exports = new Event({
 
         if (config.quarantine?.enabled !== false && config.quarantine?.flagChannelId) {
             success(`[Quarantine] Watching for "${config.quarantine.keyword ?? 'vani'}" -> channel ${config.quarantine.flagChannelId}`);
-            info('Scanning members for quarantine violations...');
-
-            for (const guild of client.guilds.cache.values()) {
-                await scanGuildMembers(client, guild);
-            }
-
-            success('Quarantine member scan finished.');
         } else {
             warn('[Quarantine] Disabled or flagChannelId not set in config');
         }

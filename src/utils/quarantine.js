@@ -49,30 +49,33 @@ const getViolationFields = (member, user = member.user, bio = '') => {
 
 /**
  * @param {import('discord.js').GuildMember} member
+ * @param {{ quiet?: boolean }} [options]
  */
-const canQuarantine = (member) => {
+const canQuarantine = (member, options = {}) => {
+    const { quiet = false } = options;
+
     if (member.user.bot) {
-        info(`[Quarantine] Skipped ${member.id}: bot account`);
+        if (!quiet) info(`[Quarantine] Skipped ${member.id}: bot account`);
         return false;
     }
 
     if (isDeveloper(member.id)) {
-        info(`[Quarantine] Skipped ${member.id}: developer exempt`);
+        if (!quiet) info(`[Quarantine] Skipped ${member.id}: developer exempt`);
         return false;
     }
 
     if (member.id === member.guild.ownerId) {
-        info(`[Quarantine] Skipped ${member.id}: guild owner`);
+        if (!quiet) info(`[Quarantine] Skipped ${member.id}: guild owner`);
         return false;
     }
 
     if (!member.guild.members.me?.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-        warn(`[Quarantine] Skipped ${member.id}: bot lacks Moderate Members in ${member.guild.name}`);
+        if (!quiet) warn(`[Quarantine] Skipped ${member.id}: bot lacks Moderate Members in ${member.guild.name}`);
         return false;
     }
 
     if (!member.moderatable) {
-        warn(`[Quarantine] Skipped ${member.id}: not moderatable (role hierarchy) in ${member.guild.name}`);
+        if (!quiet) warn(`[Quarantine] Skipped ${member.id}: not moderatable (role hierarchy) in ${member.guild.name}`);
         return false;
     }
 
@@ -106,65 +109,88 @@ const createFlagEmbed = (user, triggeredFields) => {
  * @param {import('discord.js').GuildMember} member
  * @param {import('discord.js').Client} client
  * @param {import('discord.js').User} [user]
+ * @param {{ quiet?: boolean }} [options]
+ * @returns {Promise<'quarantined' | 'clean' | 'skipped'>}
  */
-const checkAndQuarantine = async (member, client, user = member.user) => {
+const checkAndQuarantine = async (member, client, user = member.user, options = {}) => {
+    const { quiet = false } = options;
     const settings = getSettings();
 
     if (settings.enabled === false) {
-        info('[Quarantine] Disabled in config');
-        return;
+        if (!quiet) info('[Quarantine] Disabled in config');
+        return 'skipped';
     }
 
     if (!settings.flagChannelId) {
-        warn('[Quarantine] No flagChannelId in config');
-        return;
+        if (!quiet) warn('[Quarantine] No flagChannelId in config');
+        return 'skipped';
     }
 
     const key = `${member.guild.id}-${member.id}`;
-    if (processing.has(key)) return;
+    if (processing.has(key)) return 'skipped';
 
     processing.add(key);
 
     try {
-        if (!canQuarantine(member)) return;
+        if (!canQuarantine(member, { quiet })) return 'skipped';
 
         const bio = await fetchUserBio(client, member.id, member.guild.id);
         const triggeredFields = getViolationFields(member, user, bio);
 
-        info(`[Quarantine] Checked ${user.tag} (${user.id}) in ${member.guild.name} — username: "${user.username}", globalName: "${user.globalName ?? ''}", nickname: "${member.nickname ?? ''}", triggered: [${triggeredFields.join(', ')}]`);
+        if (!quiet) {
+            info(`[Quarantine] Checked ${user.tag} (${user.id}) in ${member.guild.name} — username: "${user.username}", globalName: "${user.globalName ?? ''}", nickname: "${member.nickname ?? ''}", triggered: [${triggeredFields.join(', ')}]`);
+        }
 
-        if (!triggeredFields.length) return;
+        if (!triggeredFields.length) return 'clean';
 
         const timeoutMs = (settings.timeoutDays ?? 7) * 24 * 60 * 60 * 1000;
 
         await member.timeout(timeoutMs, `Quarantine: "${getKeyword()}" in ${triggeredFields.join(', ')}`);
-        info(`[Quarantine] Timed out ${user.tag} for ${settings.timeoutDays ?? 7} days`);
+
+        if (!quiet) info(`[Quarantine] Timed out ${user.tag} for ${settings.timeoutDays ?? 7} days`);
 
         const logChannel = await member.guild.channels.fetch(settings.flagChannelId).catch(() => null);
         if (!logChannel?.isTextBased()) {
-            warn(`[Quarantine] Flag channel ${settings.flagChannelId} not found or not text-based`);
-            return;
+            if (!quiet) warn(`[Quarantine] Flag channel ${settings.flagChannelId} not found or not text-based`);
+            return 'quarantined';
         }
 
         await logChannel.send({ embeds: [createFlagEmbed(user, triggeredFields)] });
-        info(`[Quarantine] Sent flag embed for ${user.id}`);
+
+        if (!quiet) info(`[Quarantine] Sent flag embed for ${user.id}`);
+
+        return 'quarantined';
     } catch (err) {
-        error(`[Quarantine] Failed for ${member.id}:`, err.message);
+        if (!quiet) error(`[Quarantine] Failed for ${member.id}:`, err.message);
+        return 'skipped';
     } finally {
         processing.delete(key);
     }
 };
 
 /**
- * @param {import('discord.js').Client} client
  * @param {import('discord.js').Guild} guild
+ * @param {import('discord.js').Client} client
+ * @param {(current: number, total: number) => Promise<void> | void} [onProgress]
  */
-const scanGuildMembers = async (client, guild) => {
+const runGuildQuarantineCheck = async (guild, client, onProgress) => {
     await guild.members.fetch().catch(() => null);
 
-    for (const member of guild.members.cache.values()) {
-        await checkAndQuarantine(member, client);
+    const members = [...guild.members.cache.values()].filter((member) => !member.user.bot);
+    const total = members.length;
+    let quarantined = 0;
+
+    for (let index = 0; index < members.length; index++) {
+        const member = members[index];
+        const current = index + 1;
+
+        if (onProgress) await onProgress(current, total);
+
+        const result = await checkAndQuarantine(member, client, member.user, { quiet: true });
+        if (result === 'quarantined') quarantined++;
     }
+
+    return { checked: total, quarantined, keyword: getKeyword() };
 };
 
 /**
@@ -180,4 +206,9 @@ const checkUserInAllGuilds = async (client, user) => {
     }
 };
 
-module.exports = { checkAndQuarantine, scanGuildMembers, checkUserInAllGuilds };
+module.exports = {
+    checkAndQuarantine,
+    runGuildQuarantineCheck,
+    checkUserInAllGuilds,
+    getKeyword
+};

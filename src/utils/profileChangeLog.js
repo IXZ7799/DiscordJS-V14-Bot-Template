@@ -49,7 +49,7 @@ const displayValue = (value, fallback = null) => {
  * @param {string | null | undefined} [beforeFallback]
  */
 const buildBeforeAfterDescription = (before, after, beforeFallback = null) => {
-    return `**Before:** ${displayValue(before, beforeFallback)}\n**+After:** ${displayValue(after)}`;
+    return `**Before:** ${displayValue(before, beforeFallback)}\n**After:** ${displayValue(after)}`;
 };
 
 /**

@@ -78,7 +78,7 @@ module.exports = new Event({
             changes.push({
                 type: 'serverAvatar',
                 style: 'avatar',
-                title: 'Server profile picture update',
+                title: 'Server avatar update',
                 thumbnailUrl: newMember.avatar
                     ? guildAvatarUrl(newMember, newMember.avatar)
                     : newMember.displayAvatarURL({ size: 4096 })
