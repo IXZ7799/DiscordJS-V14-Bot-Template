@@ -4,7 +4,6 @@ const { info, warn } = require("../../utils/Console");
 const {
     sendProfileChangeLog,
     getProfileLogTarget,
-    isMemberInGuild,
     formatNewValue,
     avatarUrl
 } = require("../../utils/profileChangeLog");
@@ -13,24 +12,21 @@ module.exports = new Event({
     event: 'userUpdate',
     once: false,
     run: async (client, oldUser, newUser) => {
-        info(`[ProfileWatch] userUpdate fired for ${newUser.tag} (${newUser.id})`);
+        if (!config.profileWatch?.logChannelId) return;
+        if (newUser.bot) return;
 
-        if (!config.profileWatch?.logChannelId) {
-            warn('[ProfileWatch] userUpdate skipped: profileWatch.logChannelId not set');
-            return;
-        }
-
-        if (newUser.bot) {
-            info('[ProfileWatch] userUpdate skipped: user is a bot');
-            return;
-        }
-
-        info(`[ProfileWatch] userUpdate compare — username: ${oldUser.username} -> ${newUser.username}, globalName: ${oldUser.globalName ?? 'null'} -> ${newUser.globalName ?? 'null'}, avatar: ${oldUser.avatar ?? 'null'} -> ${newUser.avatar ?? 'null'}`);
+        info(`[ProfileWatch] userUpdate for ${newUser.tag} (${newUser.id})`);
 
         const target = await getProfileLogTarget(client);
         if (!target) return;
 
-        if (!await isMemberInGuild(target.guild, newUser.id)) return;
+        const member = await target.guild.members.fetch({ user: newUser.id, force: true }).catch(() => null);
+        if (!member) {
+            warn(`[ProfileWatch] userUpdate: ${newUser.id} is not in ${target.guild.name}`);
+            return;
+        }
+
+        info(`[ProfileWatch] compare — username: ${oldUser.username} -> ${newUser.username}, globalName: ${oldUser.globalName ?? 'null'} -> ${newUser.globalName ?? 'null'}, avatar: ${oldUser.avatar ?? 'null'} -> ${newUser.avatar ?? 'null'}`);
 
         const changes = [];
 
@@ -63,7 +59,7 @@ module.exports = new Event({
             return;
         }
 
-        info(`[ProfileWatch] userUpdate: ${changes.length} change(s) for ${newUser.id}:`, changes.map((c) => c.type).join(', '));
+        info(`[ProfileWatch] userUpdate: logging ${changes.length} change(s): ${changes.map((c) => c.type).join(', ')}`);
 
         for (const change of changes) {
             await sendProfileChangeLog(target, newUser, change);

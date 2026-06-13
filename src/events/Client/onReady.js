@@ -21,7 +21,8 @@ module.exports = new Event({
             warn('[ProfileWatch] Disabled: profileWatch.logChannelId not set in config');
         }
 
-        if (config.quarantine?.flagChannelId) {
+        if (config.quarantine?.enabled !== false && config.quarantine?.flagChannelId) {
+            success(`[Quarantine] Watching for "${config.quarantine.keyword ?? 'vani'}" -> channel ${config.quarantine.flagChannelId}`);
             info('Scanning members for quarantine violations...');
 
             for (const guild of client.guilds.cache.values()) {
@@ -29,6 +30,8 @@ module.exports = new Event({
             }
 
             success('Quarantine member scan finished.');
+        } else {
+            warn('[Quarantine] Disabled or flagChannelId not set in config');
         }
     }
 }).toJSON();
