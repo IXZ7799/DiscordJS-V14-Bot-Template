@@ -4,6 +4,33 @@ const ApplicationCommand = require("../../structure/ApplicationCommand");
 const { runGuildQuarantineCheck, getKeyword } = require("../../utils/quarantine");
 const config = require("../../config");
 
+const ESTIMATE_SECONDS_PER_MEMBER = 1.5;
+const PROGRESS_UPDATE_INTERVAL_MS = 10000;
+
+/**
+ * @param {{ current: number, total: number }} progress
+ * @param {number} startTime
+ */
+const getProgressMessage = (progress, startTime) => {
+    let secondsLeft;
+
+    if (progress.total <= 0) {
+        secondsLeft = 0;
+    } else if (progress.current <= 0) {
+        secondsLeft = Math.max(1, Math.ceil(progress.total * ESTIMATE_SECONDS_PER_MEMBER));
+    } else if (progress.current >= progress.total) {
+        secondsLeft = 0;
+    } else {
+        const elapsedSeconds = (Date.now() - startTime) / 1000;
+        const secondsPerMember = elapsedSeconds / progress.current;
+        secondsLeft = Math.max(1, Math.ceil(secondsPerMember * (progress.total - progress.current)));
+    }
+
+    const label = secondsLeft === 1 ? 'second' : 'seconds';
+
+    return `Checking all users, time till finished: **${secondsLeft}** ${label}...`;
+};
+
 module.exports = new ApplicationCommand({
     command: {
         name: 'quarantine-check',
@@ -38,17 +65,35 @@ module.exports = new ApplicationCommand({
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const keyword = getKeyword();
-        let lastEdit = 0;
+        const progress = { current: 0, total: 0 };
+        const startTime = Date.now();
 
-        const result = await runGuildQuarantineCheck(interaction.guild, client, async (current, total) => {
-            const now = Date.now();
-            if (current !== total && now - lastEdit < 1000) return;
-
-            lastEdit = now;
-            await interaction.editReply({
-                content: `Checked user **${current}/${total}**...`
-            });
+        await interaction.editReply({
+            content: 'Checking all users, time till finished: **estimating**...'
         });
+
+        const interval = setInterval(() => {
+            interaction.editReply({
+                content: getProgressMessage(progress, startTime)
+            }).catch(() => null);
+        }, PROGRESS_UPDATE_INTERVAL_MS);
+
+        let result;
+
+        try {
+            result = await runGuildQuarantineCheck(interaction.guild, client, async (current, total) => {
+                progress.current = current;
+                progress.total = total;
+
+                if (current === 0 && total > 0) {
+                    await interaction.editReply({
+                        content: getProgressMessage(progress, startTime)
+                    }).catch(() => null);
+                }
+            });
+        } finally {
+            clearInterval(interval);
+        }
 
         const embed = new EmbedBuilder()
             .setColor(result.quarantined > 0 ? 0x9B59B6 : 0x57F287)
